@@ -300,7 +300,7 @@ export default function Page() {
                 className="rounded-xl border px-3 py-2 text-xs hover:cursor-pointer"
                 onClick={handleCopy}
               >
-                Copy share URL
+                Copy Share URL
               </button>
               <button
                 className="rounded-xl border px-3 py-2 text-xs hover:cursor-pointer"
@@ -314,7 +314,7 @@ export default function Page() {
 
         {activeTab === "general" && (
           <div className="grid gap-4 md:grid-cols-2">
-            <Section title="General settings">
+            <Section title="General Settings">
               <Num
                 label="FPS"
                 value={common.fps}

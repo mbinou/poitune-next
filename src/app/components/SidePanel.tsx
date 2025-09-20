@@ -2,7 +2,6 @@ import { LocusSide } from "../util/defaultSide";
 import { Color } from "./Color";
 import { Num } from "./Num";
 import { Section } from "./Section";
-import { Toggle } from "./Toggle";
 
 type Props = {
   side: LocusSide;
@@ -12,37 +11,7 @@ type Props = {
 
 export const SidePanel = ({ side, setSide, title }: Props) => (
   <div className="grid gap-4 md:grid-cols-2">
-    <Section title={`${title} / Objects`}>
-      <Toggle
-        label="Origin"
-        value={side.objectVisible.origin}
-        onChange={(v) =>
-          setSide({
-            ...side,
-            objectVisible: { ...side.objectVisible, origin: v },
-          })
-        }
-      />
-      <Toggle
-        label="Hand"
-        value={side.objectVisible.hand}
-        onChange={(v) =>
-          setSide({
-            ...side,
-            objectVisible: { ...side.objectVisible, hand: v },
-          })
-        }
-      />
-      <Toggle
-        label="Poi"
-        value={side.objectVisible.poi}
-        onChange={(v) =>
-          setSide({
-            ...side,
-            objectVisible: { ...side.objectVisible, poi: v },
-          })
-        }
-      />
+    <Section title={`${title} / Spinner`}>
       <Num
         label="Origin Size"
         value={side.objectSize.origin}
@@ -50,16 +19,16 @@ export const SidePanel = ({ side, setSide, title }: Props) => (
         onChange={(v) => setSide({ ...side, objectSize: { ...side.objectSize, origin: v } })}
       />
       <Num
+        label="Arm Size"
+        value={side.segmentSize.arm}
+        step={0.5}
+        onChange={(v) => setSide({ ...side, segmentSize: { ...side.segmentSize, arm: v } })}
+      />
+      <Num
         label="Hand Size"
         value={side.objectSize.hand}
         min={0}
         onChange={(v) => setSide({ ...side, objectSize: { ...side.objectSize, hand: v } })}
-      />
-      <Num
-        label="Poi Size"
-        value={side.objectSize.poi}
-        min={0}
-        onChange={(v) => setSide({ ...side, objectSize: { ...side.objectSize, poi: v } })}
       />
       <Color
         label="Origin Color"
@@ -72,27 +41,32 @@ export const SidePanel = ({ side, setSide, title }: Props) => (
         }
       />
       <Color
+        label="Arm Color"
+        value={side.segmentColor.arm}
+        onChange={(v) => setSide({ ...side, segmentColor: { ...side.segmentColor, arm: v } })}
+      />
+      <Color
         label="Hand Color"
         value={side.objectColor.hand}
         onChange={(v) => setSide({ ...side, objectColor: { ...side.objectColor, hand: v } })}
       />
-      <Color
-        label="Poi Color"
-        value={side.objectColor.poi}
-        onChange={(v) => setSide({ ...side, objectColor: { ...side.objectColor, poi: v } })}
-      />
     </Section>
 
-    <Section title={`${title} / Rotation`}>
+    <Section title={`${title} / Spinner Rotation`}>
+      <Num
+        label="Origin X"
+        value={side.rotation.originX}
+        onChange={(v) => setSide({ ...side, rotation: { ...side.rotation, originX: v } })}
+      />
+      <Num
+        label="Origin Y"
+        value={side.rotation.originY}
+        onChange={(v) => setSide({ ...side, rotation: { ...side.rotation, originY: v } })}
+      />
       <Num
         label="Hand Radius"
         value={side.rotation.radiusHand}
         onChange={(v) => setSide({ ...side, rotation: { ...side.rotation, radiusHand: v } })}
-      />
-      <Num
-        label="Poi Radius"
-        value={side.rotation.radiusPoi}
-        onChange={(v) => setSide({ ...side, rotation: { ...side.rotation, radiusPoi: v } })}
       />
       <Num
         label="Hand Angular Velocity (rev/s)"
@@ -102,17 +76,6 @@ export const SidePanel = ({ side, setSide, title }: Props) => (
           setSide({
             ...side,
             rotation: { ...side.rotation, omegaHand: v },
-          })
-        }
-      />
-      <Num
-        label="Poi Angular Velocity (rev/s)"
-        value={side.rotation.omegaPoi}
-        step={0.1}
-        onChange={(v) =>
-          setSide({
-            ...side,
-            rotation: { ...side.rotation, omegaPoi: v },
           })
         }
       />
@@ -127,66 +90,26 @@ export const SidePanel = ({ side, setSide, title }: Props) => (
           })
         }
       />
-      <Num
-        label="Poi Initial Angle (°)"
-        value={side.rotation.anglePoi / (Math.PI / 180)}
-        step={5}
-        onChange={(v) =>
-          setSide({
-            ...side,
-            rotation: { ...side.rotation, anglePoi: v * (Math.PI / 180) },
-          })
-        }
-      />
-      <Num
-        label="Origin X"
-        value={side.rotation.originX}
-        onChange={(v) => setSide({ ...side, rotation: { ...side.rotation, originX: v } })}
-      />
-      <Num
-        label="Origin Y"
-        value={side.rotation.originY}
-        onChange={(v) => setSide({ ...side, rotation: { ...side.rotation, originY: v } })}
-      />
     </Section>
 
-    <Section title={`${title} / Segments`}>
-      <Toggle
-        label="Arm"
-        value={side.segmentVisible.arm}
-        onChange={(v) =>
-          setSide({
-            ...side,
-            segmentVisible: { ...side.segmentVisible, arm: v },
-          })
-        }
-      />
-      <Toggle
-        label="Chain"
-        value={side.segmentVisible.chain}
-        onChange={(v) =>
-          setSide({
-            ...side,
-            segmentVisible: { ...side.segmentVisible, chain: v },
-          })
-        }
+    <Section title={`${title} / Poi`}>
+      <Num
+        label="Head Size"
+        value={side.objectSize.poi}
+        min={0}
+        onChange={(v) => setSide({ ...side, objectSize: { ...side.objectSize, poi: v } })}
       />
       <Num
-        label="Arm Thickness"
-        value={side.segmentSize.arm}
-        step={0.5}
-        onChange={(v) => setSide({ ...side, segmentSize: { ...side.segmentSize, arm: v } })}
-      />
-      <Num
-        label="Chain Thickness"
+        label="Chain Size"
         value={side.segmentSize.chain}
         step={0.5}
         onChange={(v) => setSide({ ...side, segmentSize: { ...side.segmentSize, chain: v } })}
       />
+
       <Color
-        label="Arm Color"
-        value={side.segmentColor.arm}
-        onChange={(v) => setSide({ ...side, segmentColor: { ...side.segmentColor, arm: v } })}
+        label="Head Color"
+        value={side.objectColor.poi}
+        onChange={(v) => setSide({ ...side, objectColor: { ...side.objectColor, poi: v } })}
       />
       <Color
         label="Chain Color"
@@ -195,6 +118,36 @@ export const SidePanel = ({ side, setSide, title }: Props) => (
           setSide({
             ...side,
             segmentColor: { ...side.segmentColor, chain: v },
+          })
+        }
+      />
+    </Section>
+
+    <Section title={`${title} / Poi Rotation`}>
+      <Num
+        label="Head Radius"
+        value={side.rotation.radiusPoi}
+        onChange={(v) => setSide({ ...side, rotation: { ...side.rotation, radiusPoi: v } })}
+      />
+      <Num
+        label="Head Angular Velocity (rev/s)"
+        value={side.rotation.omegaPoi}
+        step={0.1}
+        onChange={(v) =>
+          setSide({
+            ...side,
+            rotation: { ...side.rotation, omegaPoi: v },
+          })
+        }
+      />
+      <Num
+        label="Head Initial Angle (°)"
+        value={side.rotation.anglePoi / (Math.PI / 180)}
+        step={5}
+        onChange={(v) =>
+          setSide({
+            ...side,
+            rotation: { ...side.rotation, anglePoi: v * (Math.PI / 180) },
           })
         }
       />
