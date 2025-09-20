@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Section } from "./components/Section";
 import { Toggle } from "./components/Toggle";
 import { clamp, Num } from "./components/Num";
@@ -61,21 +61,19 @@ export default function Page() {
   const [left, setLeft] = useState<LocusSide>(() => defaultSide(70, 70, 1, -3, 0, 0));
   const [right, setRight] = useState<LocusSide>(() => defaultSide(70, 70, 1, -3, Math.PI, Math.PI));
 
-  const searchParams = useSearchParams();
   const router = useRouter();
 
   // Restore from ?p= on mount
   useEffect(() => {
-    const p = searchParams.get("p");
+    const sp = new URLSearchParams(window.location.search);
+    const p = sp.get("p");
     if (!p) return;
     const restored = decodeState(p);
     if (!restored) return;
     setCommon((prev) => ({ ...prev, ...restored.common }));
     setLeft(restored.left);
     setRight(restored.right);
-    // If you want to remove the query after restore:
-    // router.replace("?", { scroll: false });
-  }, [searchParams]); // mount only
+  }, []);
 
   const [syncLR, setSyncLR] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "left" | "right" | "examples">("general");

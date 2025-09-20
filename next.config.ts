@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const isProd = process.env.NODE_ENV === "production";
-const repo = "tools";
+const repo = "poitune-next";
 
 const nextConfig = {
   output: "export", // 静的書き出し（out/）
