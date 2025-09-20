@@ -61,6 +61,15 @@ export default function Page() {
   const [left, setLeft] = useState<LocusSide>(() => defaultSide(70, 70, 1, -3, 0, 0));
   const [right, setRight] = useState<LocusSide>(() => defaultSide(70, 70, 1, -3, Math.PI, Math.PI));
 
+  // --- toast state ---
+  const [toast, setToast] = useState<{ msg: string; show: boolean }>({ msg: "", show: false });
+  const toastTimerRef = useRef<number | null>(null);
+  const pushToast = (msg: string, ms = 1800) => {
+    setToast({ msg, show: true });
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast((t) => ({ ...t, show: false })), ms);
+  };
+
   const router = useRouter();
 
   // Restore from ?p= on mount
@@ -218,9 +227,9 @@ export default function Page() {
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
-      alert("Copied the share URL!");
+      pushToast("Copied share URL");
     } catch {
-      window.prompt("Copy the share URL:", shareUrl);
+      pushToast("Clipboard unavailable. Select & copy manually");
     }
   };
 
@@ -422,6 +431,21 @@ export default function Page() {
             </Section>
           </div>
         )}
+
+        <div
+          className={[
+            "fixed bottom-5 left-1/2 -translate-x-1/2",
+            "transition-all duration-200",
+            toast.show
+              ? "translate-y-0 opacity-100"
+              : "pointer-events-none translate-y-2 opacity-0",
+          ].join(" ")}
+          aria-live="polite"
+        >
+          <div className="rounded-xl border border-white/15 bg-neutral-950/80 px-3 py-2 text-sm backdrop-blur">
+            {toast.msg}
+          </div>
+        </div>
 
         <footer className="py-8 text-center text-sm opacity-70">
           © Poitune Next — rebuilt Poitune by mbinou.
