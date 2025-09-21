@@ -5,10 +5,16 @@ type Props = {
 };
 
 export const Toggle = ({ label, value, onChange }: Props) => (
-  <label className="flex items-center gap-2 text-sm">
-    <span className="w-36 shrink-0">{label}</span>
+  <label className={"flex w-full flex-col gap-2 text-sm sm:flex-row sm:items-center"}>
+    <span className="shrink-0 sm:w-36">{label}</span>
     <button
-      className={"rounded border bg-black px-3 py-1 text-white hover:cursor-pointer"}
+      type="button"
+      className={[
+        "rounded border px-3 py-1 font-mono",
+        "transition hover:cursor-pointer",
+        value ? "bg-white text-black" : "bg-black text-white",
+        "self-start sm:self-auto",
+      ].join(" ")}
       onClick={() => onChange(!value)}
     >
       {value ? "ON" : "OFF"}

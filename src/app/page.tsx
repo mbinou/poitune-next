@@ -84,7 +84,7 @@ export default function Page() {
   }, []);
 
   const [syncLR, setSyncLR] = useState(false);
-  const [activeTab, setActiveTab] = useState<"general" | "left" | "right" | "examples">("general");
+  const [activeTab, setActiveTab] = useState<"General" | "Left" | "Right" | "Examples">("General");
 
   // Sync L->R (add +180° to initial angles)
   const applySyncFromLeft = (nextLeft: LocusSide) => {
@@ -256,31 +256,52 @@ export default function Page() {
       </div>
 
       <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6">
-        <div className="flex justify-between text-sm">
-          <div className="flex gap-2">
-            {(["general", "left", "right", "examples"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setActiveTab(t)}
-                className={`rounded-full border px-3 py-2 hover:cursor-pointer ${
-                  activeTab === t ? "bg-white text-black" : "bg-transparent"
-                }`}
-              >
-                {t.toUpperCase()}
-              </button>
-            ))}
+        <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+          {/* Tabs */}
+          <div
+            className="-mx-1 flex gap-2 overflow-x-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            role="tablist"
+            aria-label="Panels"
+          >
+            {(["General", "Left", "Right", "Examples"] as const).map((t) => {
+              const active = activeTab === t;
+              return (
+                <button
+                  key={t}
+                  role="tab"
+                  aria-selected={active}
+                  aria-controls={`panel-${t}`}
+                  onClick={() => setActiveTab(t)}
+                  className={[
+                    "rounded-full border px-3 py-2 text-xs whitespace-nowrap",
+                    "hover:cursor-pointer focus:ring-2 focus:ring-white/40 focus:outline-none",
+                    active ? "bg-white text-black" : "bg-transparent",
+                  ].join(" ")}
+                >
+                  {t}
+                </button>
+              );
+            })}
           </div>
-          <div className="flex items-center gap-2">
+
+          {/* Actions */}
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              className={`rounded-xl border px-3 py-2 hover:cursor-pointer ${
-                syncLR ? "bg-white text-black" : "bg-transparent"
-              }`}
+              className={[
+                "rounded-full border px-3 py-2 text-xs whitespace-nowrap",
+                "hover:cursor-pointer focus:ring-2 focus:ring-white/40 focus:outline-none",
+                syncLR ? "bg-white text-black" : "bg-transparent",
+              ].join(" ")}
               onClick={() => setSyncLR((v) => !v)}
             >
               Sync L-R {syncLR ? "ON" : "OFF"}
             </button>
+
             <button
-              className="rounded-xl border px-3 py-2 hover:cursor-pointer"
+              className={[
+                "rounded-full border px-3 py-2 text-xs whitespace-nowrap",
+                "hover:cursor-pointer focus:ring-2 focus:ring-white/40 focus:outline-none",
+              ].join(" ")}
               onClick={() => {
                 setCommon(defaultCommon);
                 const l = defaultSide(70, 70, 1, -3, 0, 0);
@@ -296,27 +317,30 @@ export default function Page() {
         </div>
 
         <div className="rounded-2xl border bg-black p-3">
+          {/* <div className="w-full overflow-hidden rounded-xl border bg-black">
+            <canvas ref={canvasRef} className="block h-auto w-full" />
+          </div> */}
           <div className="overflow-hidden rounded-xl border bg-black">
             <canvas ref={canvasRef} width={w} height={h} className="mx-auto block" />
           </div>
 
-          {/* URL Share */}
-          <div className="mt-3 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+          {/* URL Share 行：モバイルで縦積み、sm以上で横並び */}
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
             <input
-              className="flex-1 rounded border bg-neutral-950 px-2 py-2 text-xs"
+              className="min-w-0 flex-1 rounded border bg-neutral-950 px-3 py-2 text-xs sm:text-[13px]"
               value={shareUrl}
               readOnly
               onFocus={(e) => e.currentTarget.select()}
             />
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 sm:flex-nowrap">
               <button
-                className="rounded-xl border px-3 py-2 text-xs hover:cursor-pointer"
+                className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer"
                 onClick={handleCopy}
               >
                 Copy Share URL
               </button>
               <button
-                className="rounded-xl border px-3 py-2 text-xs hover:cursor-pointer"
+                className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer"
                 onClick={() => router.replace(`?p=${shareParam}`, { scroll: false })}
               >
                 Apply to URL
@@ -325,7 +349,7 @@ export default function Page() {
           </div>
         </div>
 
-        {activeTab === "general" && (
+        {activeTab === "General" && (
           <div className="grid gap-4 md:grid-cols-2">
             <Section title="General Settings">
               <Num
@@ -359,10 +383,10 @@ export default function Page() {
                 max={10}
                 onChange={(v) => setCommon({ ...common, scale: v })}
               />
-              <label className="flex items-center gap-2 text-sm">
-                <span className="w-36 shrink-0">Locus count</span>
+              <label className={"flex w-full flex-col gap-2 text-sm sm:flex-row sm:items-center"}>
+                <span className="shrink-0 sm:w-36">Locus count</span>
                 <select
-                  className="rounded border px-2 py-1"
+                  className="min-w-0 flex-1 rounded border px-2 py-1"
                   value={common.numberOfLocus}
                   onChange={(e) =>
                     setCommon({
@@ -396,7 +420,7 @@ export default function Page() {
           </div>
         )}
 
-        {activeTab === "left" && (
+        {activeTab === "Left" && (
           <SidePanel
             title="Left"
             side={left}
@@ -404,9 +428,9 @@ export default function Page() {
           />
         )}
 
-        {activeTab === "right" && <SidePanel title="Right" side={right} setSide={setRight} />}
+        {activeTab === "Right" && <SidePanel title="Right" side={right} setSide={setRight} />}
 
-        {activeTab === "examples" && (
+        {activeTab === "Examples" && (
           <div className="grid gap-4 md:grid-cols-2">
             <Section title="Examples">
               <div className="flex flex-wrap gap-2">
