@@ -492,7 +492,7 @@ export default function Page() {
               </div>
 
               <p className="text-[12px] opacity-60 sm:text-[11px]">
-                Saves current parameters (common/left/right) to your browser.
+                Saves current parameters (general/left/right) to your browser.
               </p>
             </div>
 
@@ -536,7 +536,7 @@ export default function Page() {
               </div>
 
               <p className="text-[12px] opacity-60 sm:text-[11px]">
-                Presets live only on this browser.
+                Presets are stored only on this browser.
               </p>
             </div>
           </div>
