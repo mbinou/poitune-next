@@ -86,6 +86,93 @@ export default function Page() {
   const [syncLR, setSyncLR] = useState(false);
   const [activeTab, setActiveTab] = useState<"General" | "Left" | "Right" | "Examples">("General");
 
+  // View state (pan & zoom)
+  const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
+
+  const dragRef = useRef<{
+    dragging: boolean;
+    sx: number;
+    sy: number;
+    tx0: number;
+    ty0: number;
+  } | null>(null);
+
+  // Pointer drag to pan
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onPointerDown = (e: PointerEvent) => {
+      // 左クリックのみ開始（タッチは button===0 で来るのでOK）
+      if (e.button !== 0) return;
+      e.preventDefault();
+      canvas.setPointerCapture(e.pointerId);
+      dragRef.current = {
+        dragging: true,
+        sx: e.clientX,
+        sy: e.clientY,
+        tx0: view.tx,
+        ty0: view.ty,
+      };
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      const dr = dragRef.current; // ← ローカルに退避
+      if (!dr || !dr.dragging) return;
+      const dx = e.clientX - dr.sx;
+      const dy = e.clientY - dr.sy;
+      // dr が存在する前提で dr.tx0 / dr.ty0 を参照
+      setView((v) => ({ ...v, tx: dr.tx0 + dx, ty: dr.ty0 + dy }));
+    };
+
+    const end = (_e?: PointerEvent) => {
+      dragRef.current = null;
+    };
+
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", end);
+    canvas.addEventListener("pointercancel", end);
+    canvas.addEventListener("pointerleave", end);
+    canvas.addEventListener("lostpointercapture", end);
+
+    return () => {
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", end);
+      canvas.removeEventListener("pointercancel", end);
+      canvas.removeEventListener("pointerleave", end);
+      canvas.removeEventListener("lostpointercapture", end);
+    };
+    // view.tx / view.ty は pointerdown 時点で取り込むだけなので依存は無くてもOK。
+    // ただし「常に最新の tx/ty からドラッグ開始したい」意図なら依存に入れてもよいです。
+  }, [view.tx, view.ty]);
+
+  // Wheel to zoom (cursor-centered)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoom = Math.exp(-e.deltaY * 0.0015);
+      setView((v) => {
+        const rect = canvas.getBoundingClientRect();
+        const cx = e.clientX - rect.left;
+        const cy = e.clientY - rect.top;
+        const newScale = clamp(v.scale * zoom, 0.25, 4);
+        const k = newScale / v.scale;
+        // keep cursor position visually fixed
+        const tx = cx - k * (cx - v.tx);
+        const ty = cy - k * (cy - v.ty);
+        return { tx, ty, scale: newScale };
+      });
+    };
+
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, []);
+
   // Sync L->R (add +180° to initial angles)
   const applySyncFromLeft = (nextLeft: LocusSide) => {
     setLeft(nextLeft);
@@ -114,20 +201,28 @@ export default function Page() {
       if (!common.grid.show) return;
       ctx.save();
       ctx.strokeStyle = common.grid.color;
-      ctx.lineWidth = 1;
-      const step = 20;
-      for (let x = 0; x <= w; x += step) {
-        ctx.beginPath();
-        ctx.moveTo(x + 0.5, 0);
-        ctx.lineTo(x + 0.5, h);
-        ctx.stroke();
+      ctx.lineWidth = 1 / view.scale; // keep roughly 1px appearance
+      // visible world-rect from screen rect
+      const vw = {
+        left: -view.tx / view.scale,
+        top: -view.ty / view.scale,
+        right: (w - view.tx) / view.scale,
+        bottom: (h - view.ty) / view.scale,
+      };
+      const step = 10;
+      const startX = Math.floor(vw.left / step) * step;
+      const startY = Math.floor(vw.top / step) * step;
+
+      ctx.beginPath();
+      for (let x = startX; x <= vw.right; x += step) {
+        ctx.moveTo(x + 0.5, vw.top);
+        ctx.lineTo(x + 0.5, vw.bottom);
       }
-      for (let y = 0; y <= h; y += step) {
-        ctx.beginPath();
-        ctx.moveTo(0, y + 0.5);
-        ctx.lineTo(w, y + 0.5);
-        ctx.stroke();
+      for (let y = startY; y <= vw.bottom; y += step) {
+        ctx.moveTo(vw.left, y + 0.5);
+        ctx.lineTo(vw.right, y + 0.5);
       }
+      ctx.stroke();
       ctx.restore();
     };
 
@@ -140,12 +235,20 @@ export default function Page() {
       const dt = ((now - prev) / 500) * common.speedRate; // arbitrary scale
       prev = now;
 
-      // afterimage effect
+      // 1) reset transform (screen space)
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+      // 2) afterimage background clear in screen space
       ctx.globalAlpha = 1 - clamp(common.afterimage, 0, 1);
       ctx.fillStyle = common.backgroundColor;
       ctx.fillRect(0, 0, w, h);
-
       ctx.globalAlpha = 1;
+
+      // 3) apply view (pan & zoom)
+      ctx.translate(view.tx, view.ty);
+      ctx.scale(view.scale, view.scale);
+
+      // 4) draw grid & content in world space
       drawGrid();
 
       const sides: LocusSide[] = common.numberOfLocus === 2 ? [l, r] : [l];
@@ -205,14 +308,14 @@ export default function Page() {
     };
 
     // initial clear
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = common.backgroundColor;
     ctx.fillRect(0, 0, w, h);
-    drawGrid();
 
     prev = performance.now();
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [common, left, right, w, h]);
+  }, [common, left, right, w, h, view.tx, view.ty, view.scale]);
 
   const shareParam = useMemo(() => encodeState({ common, left, right }), [common, left, right]);
 
@@ -256,6 +359,42 @@ export default function Page() {
       </div>
 
       <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6">
+        <div className="rounded-2xl border bg-black p-3">
+          <div className="overflow-hidden rounded-xl border bg-black">
+            <canvas
+              ref={canvasRef}
+              width={w}
+              height={h}
+              className="mx-auto block aspect-[32/17] w-full touch-none hover:cursor-move"
+            />
+          </div>
+          {/* <div className="w-full overflow-hidden rounded-xl border bg-black"> <canvas ref={canvasRef} className="block h-auto w-full" /> </div> */}
+
+          {/* URL Share 行：モバイルで縦積み、sm以上で横並び */}
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <input
+              className="min-w-0 flex-1 rounded border bg-neutral-950 px-3 py-2 text-xs sm:text-[13px]"
+              value={shareUrl}
+              readOnly
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <div className="flex flex-wrap gap-2 sm:flex-nowrap">
+              <button
+                className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer"
+                onClick={handleCopy}
+              >
+                Copy Share URL
+              </button>
+              <button
+                className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer"
+                onClick={() => router.replace(`?p=${shareParam}`, { scroll: false })}
+              >
+                Apply to URL
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
           {/* Tabs */}
           <div
@@ -309,43 +448,21 @@ export default function Page() {
                 setLeft(l);
                 setRight(r);
                 setSyncLR(false);
+                setView({ tx: 0, ty: 0, scale: 1 });
               }}
             >
               Reset
             </button>
-          </div>
-        </div>
 
-        <div className="rounded-2xl border bg-black p-3">
-          {/* <div className="w-full overflow-hidden rounded-xl border bg-black">
-            <canvas ref={canvasRef} className="block h-auto w-full" />
-          </div> */}
-          <div className="overflow-hidden rounded-xl border bg-black">
-            <canvas ref={canvasRef} width={w} height={h} className="mx-auto block" />
-          </div>
-
-          {/* URL Share 行：モバイルで縦積み、sm以上で横並び */}
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <input
-              className="min-w-0 flex-1 rounded border bg-neutral-950 px-3 py-2 text-xs sm:text-[13px]"
-              value={shareUrl}
-              readOnly
-              onFocus={(e) => e.currentTarget.select()}
-            />
-            <div className="flex flex-wrap gap-2 sm:flex-nowrap">
-              <button
-                className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer"
-                onClick={handleCopy}
-              >
-                Copy Share URL
-              </button>
-              <button
-                className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer"
-                onClick={() => router.replace(`?p=${shareParam}`, { scroll: false })}
-              >
-                Apply to URL
-              </button>
-            </div>
+            <button
+              className={[
+                "rounded-full border px-3 py-2 text-xs whitespace-nowrap",
+                "hover:cursor-pointer focus:ring-2 focus:ring-white/40 focus:outline-none",
+              ].join(" ")}
+              onClick={() => setView({ tx: 0, ty: 0, scale: 1 })}
+            >
+              Reset View
+            </button>
           </div>
         </div>
 
