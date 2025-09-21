@@ -1,6 +1,6 @@
 # Poitune Next
 
-A Next.js migration of Poitune, originally created by https://x.com/oniats, including refinements to the UI design.
+A Next.js migration of Poitune, originally created by oniats, including refinements to the UI design.
 
 ## 🚀 Getting Started
 
