@@ -37,6 +37,19 @@ type SharePayload = {
   right: LocusSide;
 };
 
+const LS_KEY = "poitune-presets-v1";
+type PresetMap = Record<string, SharePayload>;
+
+const safeParsePresets = (raw: string | null): PresetMap => {
+  if (!raw) return {};
+  try {
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" ? (obj as PresetMap) : {};
+  } catch {
+    return {};
+  }
+};
+
 const encodeState = (payload: SharePayload) => {
   const json = JSON.stringify(payload);
   return typeof window === "undefined" ? "" : btoa(unescape(encodeURIComponent(json)));
@@ -85,6 +98,60 @@ export default function Page() {
 
   const [syncLR, setSyncLR] = useState(false);
   const [activeTab, setActiveTab] = useState<"General" | "Left" | "Right" | "Examples">("General");
+  // ===== Presets (state) =====
+  const [presets, setPresets] = useState<PresetMap>({});
+  const [presetName, setPresetName] = useState("");
+  const [selectedPreset, setSelectedPreset] = useState("");
+
+  // 初期ロード
+  useEffect(() => {
+    const loaded = safeParsePresets(localStorage.getItem(LS_KEY));
+    setPresets(loaded);
+    const names = Object.keys(loaded);
+    if (names.length) setSelectedPreset(names[0]);
+  }, []);
+
+  const currentPayload: SharePayload = useMemo(
+    () => ({ common, left, right }),
+    [common, left, right],
+  );
+
+  const savePreset = (name: string, overwrite = false) => {
+    const trimmed = name.trim();
+    if (!trimmed) return pushToast("Enter a preset name");
+    if (!overwrite && presets[trimmed]) {
+      return pushToast("Name exists (use Overwrite)");
+    }
+    const next = { ...presets, [trimmed]: currentPayload };
+    setPresets(next);
+    localStorage.setItem(LS_KEY, JSON.stringify(next));
+    setSelectedPreset(trimmed);
+    pushToast(overwrite ? "Preset overwritten" : "Preset saved");
+  };
+
+  const loadPreset = (name: string) => {
+    const p = presets[name];
+    if (!p) return;
+    setCommon((prev) => ({ ...prev, ...p.common }));
+    setLeft(p.left);
+    setRight(p.right);
+    pushToast(`Loaded "${name}"`);
+  };
+
+  const deletePreset = (name: string) => {
+    if (!presets[name]) return;
+    const { [name]: _, ...rest } = presets;
+    setPresets(rest);
+    localStorage.setItem(LS_KEY, JSON.stringify(rest));
+    setSelectedPreset(Object.keys(rest)[0] ?? "");
+    pushToast(`Deleted "${name}"`);
+  };
+
+  const presetNames = useMemo(
+    () =>
+      Object.keys(presets).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
+    [presets],
+  );
 
   // View state (pan & zoom)
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
@@ -391,6 +458,86 @@ export default function Page() {
               >
                 Apply to URL
               </button>
+            </div>
+          </div>
+
+          {/* Presets */}
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {/* Save */}
+            <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-neutral-950/50 p-3">
+              <div className="text-sm font-semibold opacity-80 sm:text-xs">Save Preset</div>
+
+              {/* モバイル=縦積み / sm+=横並び */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  className="min-w-0 flex-1 rounded border bg-neutral-950 px-3 py-2 text-sm sm:text-xs"
+                  placeholder="Preset name (e.g. Clover-Blue)"
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                />
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    className="w-full rounded-xl border px-3 py-2 text-sm hover:cursor-pointer sm:w-auto sm:text-xs"
+                    onClick={() => savePreset(presetName, false)}
+                  >
+                    Save
+                  </button>
+                  <button
+                    className="w-full rounded-xl border px-3 py-2 text-sm hover:cursor-pointer sm:w-auto sm:text-xs"
+                    onClick={() => savePreset(presetName, true)}
+                  >
+                    Overwrite
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-[12px] opacity-60 sm:text-[11px]">
+                Saves current parameters (common/left/right) to your browser.
+              </p>
+            </div>
+
+            {/* Load/Delete */}
+            <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-neutral-950/50 p-3">
+              <div className="text-sm font-semibold opacity-80 sm:text-xs">
+                Load / Delete Preset
+              </div>
+
+              {/* モバイル=縦積み / sm+=横並び */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <select
+                  className="min-w-0 flex-1 rounded border bg-neutral-950 px-3 py-2 pr-8 text-sm sm:text-xs"
+                  value={selectedPreset}
+                  onChange={(e) => setSelectedPreset(e.target.value)}
+                >
+                  {presetNames.length === 0 ? <option value="">(No presets)</option> : null}
+                  {presetNames.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    disabled={!selectedPreset}
+                    className="w-full rounded-xl border px-3 py-2 text-sm hover:cursor-pointer disabled:opacity-40 sm:w-auto sm:text-xs"
+                    onClick={() => selectedPreset && loadPreset(selectedPreset)}
+                  >
+                    Load
+                  </button>
+                  <button
+                    disabled={!selectedPreset}
+                    className="w-full rounded-xl border px-3 py-2 text-sm hover:cursor-pointer disabled:opacity-40 sm:w-auto sm:text-xs"
+                    onClick={() => selectedPreset && deletePreset(selectedPreset)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-[12px] opacity-60 sm:text-[11px]">
+                Presets live only on this browser.
+              </p>
             </div>
           </div>
         </div>
