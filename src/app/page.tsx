@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Section } from "./components/Section";
 import { Toggle } from "./components/Toggle";
 import { clamp, Num } from "./components/Num";
@@ -8,7 +8,8 @@ import { Color } from "./components/Color";
 import { SidePanel } from "./components/SidePanel";
 import { defaultSide, LocusSide, RotationParams } from "./util/defaultSide";
 import { examplesMap } from "./util/examplesMap";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { FaGithub } from "react-icons/fa";
 
 export type CommonParams = {
   fps: number;
@@ -30,7 +31,6 @@ const defaultCommon: CommonParams = {
   grid: { show: true, color: "#333333" },
 };
 
-// ===== URL share utilities =====
 type SharePayload = {
   common: CommonParams;
   left: LocusSide;
@@ -61,7 +61,6 @@ export default function Page() {
   const [left, setLeft] = useState<LocusSide>(() => defaultSide(70, 70, 1, -3, 0, 0));
   const [right, setRight] = useState<LocusSide>(() => defaultSide(70, 70, 1, -3, Math.PI, Math.PI));
 
-  // --- toast state ---
   const [toast, setToast] = useState<{ msg: string; show: boolean }>({ msg: "", show: false });
   const toastTimerRef = useRef<number | null>(null);
   const pushToast = (msg: string, ms = 1800) => {
@@ -215,7 +214,6 @@ export default function Page() {
     return () => cancelAnimationFrame(animId);
   }, [common, left, right, w, h]);
 
-  // ===== share URL =====
   const shareParam = useMemo(() => encodeState({ common, left, right }), [common, left, right]);
 
   const shareUrl = useMemo(() => {
@@ -246,12 +244,18 @@ export default function Page() {
       <div className="sticky top-0 z-10 border-b bg-neutral-950/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
           <div className="font-bold tracking-wide">Poitune Next</div>
+          <a
+            href="https://github.com/mbinou/poitune-next"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="opacity-70 transition hover:opacity-100"
+          >
+            <FaGithub />
+          </a>
         </div>
       </div>
 
       <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6">
-        {/* <header className="flex items-end justify-between gap-4"></header> */}
-
         <div className="flex justify-between text-sm">
           <div className="flex gap-2">
             {(["general", "left", "right", "examples"] as const).map((t) => (
@@ -276,7 +280,7 @@ export default function Page() {
               Sync L-R {syncLR ? "ON" : "OFF"}
             </button>
             <button
-              className="rounded-xl border px-3 py-2"
+              className="rounded-xl border px-3 py-2 hover:cursor-pointer"
               onClick={() => {
                 setCommon(defaultCommon);
                 const l = defaultSide(70, 70, 1, -3, 0, 0);
@@ -296,7 +300,7 @@ export default function Page() {
             <canvas ref={canvasRef} width={w} height={h} className="mx-auto block" />
           </div>
 
-          {/* === URL Share UI === */}
+          {/* URL Share */}
           <div className="mt-3 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
             <input
               className="flex-1 rounded border bg-neutral-950 px-2 py-2 text-xs"
