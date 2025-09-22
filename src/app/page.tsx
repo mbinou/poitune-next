@@ -467,7 +467,6 @@ export default function Page() {
             <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-neutral-950/50 p-3">
               <div className="text-sm font-semibold opacity-80 sm:text-xs">Save Preset</div>
 
-              {/* モバイル=縦積み / sm+=横並び */}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <input
                   className="min-w-0 flex-1 rounded border bg-neutral-950 px-3 py-2 text-sm sm:text-xs"
@@ -475,15 +474,15 @@ export default function Page() {
                   value={presetName}
                   onChange={(e) => setPresetName(e.target.value)}
                 />
-                <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="flex flex-wrap gap-2 sm:flex-nowrap">
                   <button
-                    className="w-full rounded-xl border px-3 py-2 text-sm hover:cursor-pointer sm:w-auto sm:text-xs"
+                    className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer"
                     onClick={() => savePreset(presetName, false)}
                   >
                     Save
                   </button>
                   <button
-                    className="w-full rounded-xl border px-3 py-2 text-sm hover:cursor-pointer sm:w-auto sm:text-xs"
+                    className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer"
                     onClick={() => savePreset(presetName, true)}
                   >
                     Overwrite
@@ -502,7 +501,6 @@ export default function Page() {
                 Load / Delete Preset
               </div>
 
-              {/* モバイル=縦積み / sm+=横並び */}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <select
                   className="min-w-0 flex-1 rounded border bg-neutral-950 px-3 py-2 pr-8 text-sm sm:text-xs"
@@ -517,17 +515,17 @@ export default function Page() {
                   ))}
                 </select>
 
-                <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="flex flex-wrap gap-2 sm:flex-nowrap">
                   <button
                     disabled={!selectedPreset}
-                    className="w-full rounded-xl border px-3 py-2 text-sm hover:cursor-pointer disabled:opacity-40 sm:w-auto sm:text-xs"
+                    className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer"
                     onClick={() => selectedPreset && loadPreset(selectedPreset)}
                   >
                     Load
                   </button>
                   <button
                     disabled={!selectedPreset}
-                    className="w-full rounded-xl border px-3 py-2 text-sm hover:cursor-pointer disabled:opacity-40 sm:w-auto sm:text-xs"
+                    className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer"
                     onClick={() => selectedPreset && deletePreset(selectedPreset)}
                   >
                     Delete
