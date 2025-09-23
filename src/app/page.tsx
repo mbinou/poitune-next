@@ -31,6 +31,26 @@ const defaultCommon: CommonParams = {
   grid: { show: true, color: "#333333" },
 };
 
+const BUILTIN_PREFIX = "ex:"; // 内部識別用（UI には出さない）
+
+const builtInPresets: PresetMap = Object.fromEntries(
+  Object.entries(examplesMap).map(([k, v]) => [
+    `${BUILTIN_PREFIX}${k}`,
+    {
+      // common が未指定の Example もある想定なので defaultCommon をベースにマージ
+      common: v.common ? { ...defaultCommon, ...v.common } : { ...defaultCommon },
+      left: v.left,
+      right: v.right,
+    },
+  ]),
+);
+
+// name が built-in かどうか
+const isBuiltIn = (name: string) => name.startsWith(BUILTIN_PREFIX);
+
+// 表示名（UI 用に prefix を外す）
+const displayName = (name: string) => (isBuiltIn(name) ? name.slice(BUILTIN_PREFIX.length) : name);
+
 type SharePayload = {
   common: CommonParams;
   left: LocusSide;
@@ -98,16 +118,22 @@ export default function Page() {
 
   const [syncLR, setSyncLR] = useState(false);
   const [activeTab, setActiveTab] = useState<"General" | "Left" | "Right" | "Examples">("General");
+
   // ===== Presets (state) =====
   const [presets, setPresets] = useState<PresetMap>({});
+  const [userPresets, setUserPresets] = useState<PresetMap>({});
+
   const [presetName, setPresetName] = useState("");
   const [selectedPreset, setSelectedPreset] = useState("");
 
   // 初期ロード
   useEffect(() => {
     const loaded = safeParsePresets(localStorage.getItem(LS_KEY));
-    setPresets(loaded);
-    const names = Object.keys(loaded);
+    setUserPresets(loaded);
+    const names = [
+      ...Object.keys(builtInPresets).map((n) => n),
+      ...Object.keys(loaded).map((n) => n),
+    ];
     if (names.length) setSelectedPreset(names[0]);
   }, []);
 
@@ -119,39 +145,50 @@ export default function Page() {
   const savePreset = (name: string, overwrite = false) => {
     const trimmed = name.trim();
     if (!trimmed) return pushToast("Enter a preset name");
-    if (!overwrite && presets[trimmed]) {
+
+    // built-in と同名は禁止
+    if (builtInPresets[`${BUILTIN_PREFIX}${trimmed}`]) {
+      return pushToast("This name is reserved for a built-in example");
+    }
+
+    if (!overwrite && userPresets[trimmed]) {
       return pushToast("Name exists (use Overwrite)");
     }
-    const next = { ...presets, [trimmed]: currentPayload };
-    setPresets(next);
+    if (overwrite && !userPresets[trimmed]) {
+      return pushToast("Nothing to overwrite");
+    }
+
+    const next = { ...userPresets, [trimmed]: currentPayload };
+    setUserPresets(next);
     localStorage.setItem(LS_KEY, JSON.stringify(next));
     setSelectedPreset(trimmed);
     pushToast(overwrite ? "Preset overwritten" : "Preset saved");
   };
 
   const loadPreset = (name: string) => {
-    const p = presets[name];
+    const p = isBuiltIn(name) ? builtInPresets[name] : userPresets[name];
+
     if (!p) return;
     setCommon((prev) => ({ ...prev, ...p.common }));
     setLeft(p.left);
     setRight(p.right);
-    pushToast(`Loaded "${name}"`);
+    pushToast(`Loaded "${displayName(name)}"`);
   };
 
   const deletePreset = (name: string) => {
-    if (!presets[name]) return;
-    const { [name]: _, ...rest } = presets;
-    setPresets(rest);
+    if (isBuiltIn(name)) {
+      return pushToast("Built-in presets cannot be deleted");
+    }
+    if (!userPresets[name]) return;
+
+    const { [name]: _, ...rest } = userPresets;
+    setUserPresets(rest);
     localStorage.setItem(LS_KEY, JSON.stringify(rest));
-    setSelectedPreset(Object.keys(rest)[0] ?? "");
+    // 次の選択：残っている built-in > user の順で先頭
+    const nextNames = [...Object.keys(builtInPresets), ...Object.keys(rest)];
+    setSelectedPreset(nextNames[0] ?? "");
     pushToast(`Deleted "${name}"`);
   };
-
-  const presetNames = useMemo(
-    () =>
-      Object.keys(presets).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
-    [presets],
-  );
 
   // View state (pan & zoom)
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
@@ -402,11 +439,13 @@ export default function Page() {
   };
 
   const applyExample = (key: string) => {
-    const { left: l, right: r, common: c } = examplesMap[key];
+    const name = `${BUILTIN_PREFIX}${key}`;
+    const { left: l, right: r, common: c } = builtInPresets[name];
     if (syncLR) setSyncLR(false);
     setLeft(l);
     setRight(r);
     if (c) setCommon({ ...common, ...c });
+    pushToast(`Loaded "${displayName(name)}"`);
   };
 
   return (
@@ -498,7 +537,7 @@ export default function Page() {
             {/* Load/Delete */}
             <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-neutral-950/50 p-3">
               <div className="text-sm font-semibold opacity-80 sm:text-xs">
-                Load / Delete Preset
+                Load / Delete My Presets
               </div>
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -507,12 +546,34 @@ export default function Page() {
                   value={selectedPreset}
                   onChange={(e) => setSelectedPreset(e.target.value)}
                 >
-                  {presetNames.length === 0 ? <option value="">(No presets)</option> : null}
-                  {presetNames.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
+                  {/* Built-in */}
+                  <optgroup label="Built-in (Examples)">
+                    {Object.keys(builtInPresets)
+                      .sort((a, b) =>
+                        displayName(a).localeCompare(displayName(b), undefined, {
+                          sensitivity: "base",
+                        }),
+                      )
+                      .map((n) => (
+                        <option key={n} value={n}>
+                          {displayName(n)} {/* prefix を外して表示 */}
+                        </option>
+                      ))}
+                  </optgroup>
+
+                  {/* User */}
+                  <optgroup label="My Presets">
+                    {Object.keys(userPresets)
+                      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+                      .map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    {Object.keys(userPresets).length === 0 && (
+                      <option value="">(No presets)</option>
+                    )}
+                  </optgroup>
                 </select>
 
                 <div className="flex flex-wrap gap-2 sm:flex-nowrap">
@@ -524,8 +585,8 @@ export default function Page() {
                     Load
                   </button>
                   <button
-                    disabled={!selectedPreset}
-                    className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer"
+                    disabled={!selectedPreset || isBuiltIn(selectedPreset)}
+                    className="rounded-xl border px-3 py-2 text-xs whitespace-nowrap hover:cursor-pointer disabled:opacity-40"
                     onClick={() => selectedPreset && deletePreset(selectedPreset)}
                   >
                     Delete
@@ -547,7 +608,7 @@ export default function Page() {
             role="tablist"
             aria-label="Panels"
           >
-            {(["General", "Left", "Right", "Examples"] as const).map((t) => {
+            {(["General", "Left", "Right"] as const).map((t) => {
               const active = activeTab === t;
               return (
                 <button
@@ -691,36 +752,6 @@ export default function Page() {
         )}
 
         {activeTab === "Right" && <SidePanel title="Right" side={right} setSide={setRight} />}
-
-        {activeTab === "Examples" && (
-          <div className="grid gap-4 md:grid-cols-2">
-            <Section title="Examples">
-              <div className="flex flex-wrap gap-2">
-                {Object.keys(examplesMap).map((k) => (
-                  <button
-                    key={k}
-                    className="rounded-xl border px-3 py-2 hover:cursor-pointer"
-                    onClick={() => applyExample(k)}
-                  >
-                    {k}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2 text-sm opacity-80">
-                Clicking an example overwrites current parameters. Sync L-R will be turned OFF
-                automatically.
-              </p>
-            </Section>
-            <Section title="Hints">
-              <ul className="list-disc space-y-1 pl-5 text-sm opacity-90">
-                <li>Radius/velocity ratios change the petal shape.</li>
-                <li>Relative initial angles control vertical/horizontal symmetry.</li>
-                <li>Higher afterimage helps visualize trails.</li>
-                <li>Grid + lower speed is great for analysis.</li>
-              </ul>
-            </Section>
-          </div>
-        )}
 
         <div
           className={[

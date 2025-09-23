@@ -103,6 +103,7 @@ export const SidePanel = ({ side, setSide, title }: Props) => (
         label="Chain Size"
         value={side.segmentSize.chain}
         step={0.5}
+        min={0}
         onChange={(v) => setSide({ ...side, segmentSize: { ...side.segmentSize, chain: v } })}
       />
 
