@@ -120,7 +120,6 @@ export default function Page() {
   const [activeTab, setActiveTab] = useState<"General" | "Left" | "Right" | "Examples">("General");
 
   // ===== Presets (state) =====
-  const [presets, setPresets] = useState<PresetMap>({});
   const [userPresets, setUserPresets] = useState<PresetMap>({});
 
   const [presetName, setPresetName] = useState("");
@@ -436,16 +435,6 @@ export default function Page() {
     } catch {
       pushToast("Clipboard unavailable. Select & copy manually");
     }
-  };
-
-  const applyExample = (key: string) => {
-    const name = `${BUILTIN_PREFIX}${key}`;
-    const { left: l, right: r, common: c } = builtInPresets[name];
-    if (syncLR) setSyncLR(false);
-    setLeft(l);
-    setRight(r);
-    if (c) setCommon({ ...common, ...c });
-    pushToast(`Loaded "${displayName(name)}"`);
   };
 
   return (
