@@ -452,7 +452,6 @@ export default function Page() {
               className="mx-auto block aspect-[32/17] w-full touch-none hover:cursor-move"
             />
           </div>
-          {/* <div className="w-full overflow-hidden rounded-xl border bg-black"> <canvas ref={canvasRef} className="block h-auto w-full" /> </div> */}
 
           {/* URL Share 行：モバイルで縦積み、sm以上で横並び */}
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
