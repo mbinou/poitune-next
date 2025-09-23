@@ -10,6 +10,7 @@ import { defaultSide, LocusSide, RotationParams } from "./util/defaultSide";
 import { examplesMap } from "./util/examplesMap";
 import { useRouter } from "next/navigation";
 import { Header } from "./components/Header";
+import { Footer } from "./components/Footer";
 
 export type CommonParams = {
   fps: number;
@@ -745,9 +746,7 @@ export default function Page() {
           </div>
         </div>
 
-        <footer className="py-8 text-center text-sm opacity-70">
-          © Poitune Next — rebuilt Poitune by mbinou.
-        </footer>
+        <Footer />
       </main>
     </div>
   );
