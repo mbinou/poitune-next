@@ -9,7 +9,7 @@ import { SidePanel } from "./components/SidePanel";
 import { defaultSide, LocusSide, RotationParams } from "./util/defaultSide";
 import { examplesMap } from "./util/examplesMap";
 import { useRouter } from "next/navigation";
-import { FaGithub } from "react-icons/fa";
+import { Header } from "./components/Header";
 
 export type CommonParams = {
   fps: number;
@@ -439,19 +439,7 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-neutral-900 text-neutral-100">
-      <div className="sticky top-0 z-10 border-b bg-neutral-950/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-          <div className="font-bold tracking-wide">Poitune Next</div>
-          <a
-            href="https://github.com/mbinou/poitune-next"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="opacity-70 transition hover:opacity-100"
-          >
-            <FaGithub />
-          </a>
-        </div>
-      </div>
+      <Header />
 
       <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6">
         <div className="rounded-2xl border bg-black p-3">
