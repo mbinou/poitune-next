@@ -21,6 +21,19 @@ import {
 } from "./util/visualPoi";
 import { useColumnData } from "./util/useColumnData";
 import { drawVisualSideLive, renderExposure } from "./util/drawVisualPoi";
+import { SequencePanel } from "./components/SequencePanel";
+import {
+  Angles4,
+  buildTimeline,
+  parseStoredSequence,
+  Resolver,
+  sampleTimeline,
+  saveStoredSequence,
+  SEQ_LS_KEY,
+  SequenceStep,
+  Timeline,
+  wrapPi,
+} from "./util/sequence";
 
 export type CommonParams = {
   fps: number;
@@ -72,6 +85,15 @@ type SharePayload = {
 const LS_KEY = "poitune-presets-v1";
 type PresetMap = Record<string, SharePayload>;
 
+// シーケンス再生の実体（React state に置かず ref で保持し、RAF が毎フレーム読む）
+type PlaybackState = {
+  timeline: Timeline;
+  startTime: number; // performance.now() の絶対値 → effect 再起動やタブ非表示に耐える
+  lastAngles: Angles4 | null; // ビジュアルポイのサブステップ用 prev 角
+  lastUiStepIdx: number; // setSeqCurrentStep の変化ガード
+  lastCommitIdx: number; // 手動停止時にコミットするステップ
+};
+
 const safeParsePresets = (raw: string | null): PresetMap => {
   if (!raw) return {};
   try {
@@ -109,6 +131,26 @@ export default function Page() {
   // ===== Visual poi (POV/LED) =====
   const [visual, setVisual] = useState<VisualPoiParams>(defaultVisualPoi);
   const { columnDataRef, columnVersion } = useColumnData(visual);
+
+  // ===== Sequence (パターン遷移の再生リスト) =====
+  const [seqSteps, setSeqSteps] = useState<SequenceStep[]>([]);
+  const [seqLoop, setSeqLoop] = useState(false);
+  const [seqPlaying, setSeqPlaying] = useState(false); // 描画 effect の依存に入れる
+  const [seqCurrentStep, setSeqCurrentStep] = useState(-1); // UI ハイライト専用（依存に入れない）
+  const playbackRef = useRef<PlaybackState | null>(null);
+  const seqLoadedRef = useRef(false);
+
+  useEffect(() => {
+    const s = parseStoredSequence(localStorage.getItem(SEQ_LS_KEY));
+    setSeqSteps(s.steps);
+    setSeqLoop(s.loop);
+    seqLoadedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!seqLoadedRef.current) return;
+    saveStoredSequence({ steps: seqSteps, loop: seqLoop });
+  }, [seqSteps, seqLoop]);
 
   const [toast, setToast] = useState<{ msg: string; show: boolean }>({ msg: "", show: false });
   const toastTimerRef = useRef<number | null>(null);
@@ -149,7 +191,7 @@ export default function Page() {
 
   const [syncLR, setSyncLR] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "General" | "Left" | "Right" | "Visual Poi" | "Examples"
+    "General" | "Left" | "Right" | "Visual Poi" | "Sequence" | "Examples"
   >("General");
 
   // ===== Presets (state) =====
@@ -233,6 +275,54 @@ export default function Page() {
     const nextNames = [...Object.keys(builtInPresets), ...Object.keys(rest)];
     setSelectedPreset(nextNames[0] ?? "");
     pushToast(`Deleted "${name}"`);
+  };
+
+  // ===== Sequence 再生制御 =====
+  const startSequence = () => {
+    if (seqPlaying || seqSteps.length === 0) return;
+    const resolver: Resolver = (name) => {
+      const p = isBuiltIn(name) ? builtInPresets[name] : userPresets[name];
+      if (!p) return null;
+      // visual はシーケンスでは切り替えない（グローバル設定を使用）ため捨てる
+      return { common: { ...defaultCommon, ...p.common }, left: p.left, right: p.right };
+    };
+    const res = buildTimeline(seqSteps, seqLoop, resolver);
+    if (!res.ok) {
+      return pushToast(
+        `プリセット「${displayName(res.missing)}」が見つかりません。再生を中止しました`,
+      );
+    }
+    if (res.timeline.loop && res.timeline.totalSec <= 0) {
+      return pushToast("合計時間が 0 のためループ再生できません");
+    }
+    playbackRef.current = {
+      timeline: res.timeline,
+      startTime: performance.now(),
+      lastAngles: null,
+      lastUiStepIdx: -1,
+      lastCommitIdx: 0,
+    };
+    setSeqCurrentStep(0);
+    setSeqPlaying(true);
+  };
+
+  // 停止時は補間途中の値ではなく「現在向かっているステップ」のプリセットをコミットする
+  const commitSequenceStep = (pb: PlaybackState | null, commitIdx: number) => {
+    const p = pb?.timeline.steps[commitIdx]?.payload;
+    if (p) {
+      setCommon((prev) => ({ ...prev, ...p.common }));
+      setLeft(structuredClone(p.left));
+      setRight(structuredClone(p.right));
+      // setVisual は呼ばない（シーケンスは visual を扱わない）
+    }
+  };
+
+  const stopSequence = () => {
+    const pb = playbackRef.current;
+    playbackRef.current = null;
+    setSeqPlaying(false);
+    setSeqCurrentStep(-1);
+    if (pb) commitSequenceStep(pb, pb.lastCommitIdx);
   };
 
   // View state (pan & zoom)
@@ -382,10 +472,10 @@ export default function Page() {
     let animId = 0;
     let prev = performance.now();
 
-    const drawGrid = () => {
-      if (!common.grid.show) return;
+    const drawGrid = (grid: CommonParams["grid"]) => {
+      if (!grid.show) return;
       ctx.save();
-      ctx.strokeStyle = common.grid.color;
+      ctx.strokeStyle = grid.color;
       ctx.lineWidth = 1 / view.scale; // keep roughly 1px appearance
       // visible world-rect from screen rect
       const vw = {
@@ -418,29 +508,152 @@ export default function Page() {
     const shownSides: LocusSide[] = common.numberOfLocus === 2 ? [l, r] : [l];
     const anyVisual = shownSides.some((s) => (s.poiType ?? "normal") === "visual");
 
-    // 長時間露光: パターン1周期分を静的に一括描画（RAF なし）
-    if (visual.exposure && anyVisual && columnDataRef.current) {
+    // 長時間露光: パターン1周期分を静的に一括描画（RAF なし）。シーケンス再生中はバイパス
+    if (!seqPlaying && visual.exposure && anyVisual && columnDataRef.current) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = common.backgroundColor;
       ctx.fillRect(0, 0, w, h);
       ctx.translate(view.tx, view.ty);
       ctx.scale(view.scale, view.scale);
-      drawGrid();
+      drawGrid(common.grid);
       renderExposure(ctx, shownSides, columnDataRef.current, visual, common.scale, view.scale);
       return;
     }
 
+    // side 1つ分の描画（角度は確定済み。prev 角はビジュアルポイのサブステップ用）
+    const drawSideFrame = (
+      side: LocusSide,
+      prevHand: number,
+      prevPoi: number,
+      fc: CommonParams,
+    ) => {
+      const {
+        rotation,
+        objectVisible,
+        objectSize,
+        objectColor,
+        segmentVisible,
+        segmentSize,
+        segmentColor,
+      } = side;
+
+      const colData = columnDataRef.current;
+      const isVisual = (side.poiType ?? "normal") === "visual" && colData !== null;
+
+      const hx = rotation.originX + Math.cos(rotation.angleHand) * rotation.radiusHand * fc.scale;
+      const hy = rotation.originY + Math.sin(rotation.angleHand) * rotation.radiusHand * fc.scale;
+      const px = hx + Math.cos(rotation.anglePoi) * rotation.radiusPoi * fc.scale;
+      const py = hy + Math.sin(rotation.anglePoi) * rotation.radiusPoi * fc.scale;
+
+      if (segmentVisible.chain) {
+        ctx.strokeStyle = segmentColor.chain;
+        ctx.lineWidth = segmentSize.chain;
+        ctx.beginPath();
+        ctx.moveTo(rotation.originX, rotation.originY);
+        ctx.lineTo(hx, hy);
+        ctx.stroke();
+      }
+
+      // ビジュアルポイでは Arm 線が LED バーを塗り潰してしまうため描かない（露光モードと同じ扱い）
+      if (segmentVisible.arm && !isVisual) {
+        ctx.strokeStyle = segmentColor.arm;
+        ctx.lineWidth = segmentSize.arm;
+        ctx.beginPath();
+        ctx.moveTo(hx, hy);
+        ctx.lineTo(px, py);
+        ctx.stroke();
+      }
+
+      if (isVisual && colData) {
+        drawVisualSideLive(ctx, rotation, prevHand, prevPoi, colData, visual, fc.scale, view.scale);
+      }
+
+      const drawDot = (x: number, y: number, size: number, color: string) => {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      };
+      if (objectVisible.origin)
+        drawDot(rotation.originX, rotation.originY, objectSize.origin, objectColor.origin);
+      if (objectVisible.hand) drawDot(hx, hy, objectSize.hand, objectColor.hand);
+      if (objectVisible.poi && !isVisual) drawDot(px, py, objectSize.poi, objectColor.poi);
+    };
+
+    // シーケンスの自然終了（非ループ）: 行き先ステップをコミットして停止
+    const finishPlayback = (commitIdx: number) => {
+      const pb = playbackRef.current;
+      playbackRef.current = null;
+      const p = pb?.timeline.steps[commitIdx]?.payload;
+      if (p) {
+        setCommon((prevC) => ({ ...prevC, ...p.common }));
+        setLeft(structuredClone(p.left));
+        setRight(structuredClone(p.right));
+      }
+      setSeqPlaying(false);
+      setSeqCurrentStep(-1);
+    };
+
     const render = () => {
       const now = performance.now();
-      const dt = ((now - prev) / 500) * common.speedRate; // arbitrary scale
+      const pb = seqPlaying ? playbackRef.current : null;
+
+      let fc: CommonParams;
+      const frame: { side: LocusSide; prevHand: number; prevPoi: number }[] = [];
+
+      if (pb) {
+        // ===== シーケンス再生: 経過実時間の純関数としてサンプリング =====
+        const s = sampleTimeline(pb.timeline, (now - pb.startTime) / 1000);
+        if (s.finished) {
+          finishPlayback(s.commitIdx);
+          return; // 次の RAF は予約しない（state 変化で effect が再起動する）
+        }
+        fc = s.common;
+        const pa = pb.lastAngles ?? s.angles;
+        // 遷移終端・ループ折返しでは角度の数値が 2πk 飛ぶ（位相は同一）。
+        // ビジュアルポイのサブステップが全周スミアを描かないよう、
+        // prev 角を現在角の ±π 以内にラップしてから渡す。
+        const wrapPrev = (cur: number, prevA: number) => cur + wrapPi(prevA - cur);
+        frame.push({
+          side: s.left,
+          prevHand: wrapPrev(s.angles.lHand, pa.lHand),
+          prevPoi: wrapPrev(s.angles.lPoi, pa.lPoi),
+        });
+        if (fc.numberOfLocus === 2) {
+          frame.push({
+            side: s.right,
+            prevHand: wrapPrev(s.angles.rHand, pa.rHand),
+            prevPoi: wrapPrev(s.angles.rPoi, pa.rPoi),
+          });
+        }
+        pb.lastAngles = s.angles;
+        pb.lastCommitIdx = s.commitIdx;
+        if (s.uiStepIdx !== pb.lastUiStepIdx) {
+          pb.lastUiStepIdx = s.uiStepIdx;
+          setSeqCurrentStep(s.uiStepIdx); // effect 依存に無いので再起動しない
+        }
+      } else {
+        // ===== 通常: 増分で角度を前進 =====
+        const dt = ((now - prev) / 500) * common.speedRate; // arbitrary scale
+        fc = common;
+        const sides: LocusSide[] = common.numberOfLocus === 2 ? [l, r] : [l];
+        for (const side of sides) {
+          const rotation = side.rotation;
+          const prevHand = rotation.angleHand;
+          const prevPoi = rotation.anglePoi;
+          rotation.angleHand += rotation.omegaHand * dt;
+          rotation.anglePoi += rotation.omegaPoi * dt;
+          frame.push({ side, prevHand, prevPoi });
+        }
+      }
       prev = now;
 
       // 1) reset transform (screen space)
       ctx.setTransform(1, 0, 0, 1, 0, 0);
 
       // 2) afterimage background clear in screen space
-      ctx.globalAlpha = 1 - clamp(common.afterimage, 0, 1);
-      ctx.fillStyle = common.backgroundColor;
+      ctx.globalAlpha = 1 - clamp(fc.afterimage, 0, 1);
+      ctx.fillStyle = fc.backgroundColor;
       ctx.fillRect(0, 0, w, h);
       ctx.globalAlpha = 1;
 
@@ -449,78 +662,8 @@ export default function Page() {
       ctx.scale(view.scale, view.scale);
 
       // 4) draw grid & content in world space
-      drawGrid();
-
-      const sides: LocusSide[] = common.numberOfLocus === 2 ? [l, r] : [l];
-
-      for (const side of sides) {
-        const {
-          rotation,
-          objectVisible,
-          objectSize,
-          objectColor,
-          segmentVisible,
-          segmentSize,
-          segmentColor,
-        } = side;
-
-        const prevHand = rotation.angleHand;
-        const prevPoi = rotation.anglePoi;
-        rotation.angleHand += rotation.omegaHand * dt;
-        rotation.anglePoi += rotation.omegaPoi * dt;
-
-        const colData = columnDataRef.current;
-        const isVisual = (side.poiType ?? "normal") === "visual" && colData !== null;
-
-        const hx =
-          rotation.originX + Math.cos(rotation.angleHand) * rotation.radiusHand * common.scale;
-        const hy =
-          rotation.originY + Math.sin(rotation.angleHand) * rotation.radiusHand * common.scale;
-        const px = hx + Math.cos(rotation.anglePoi) * rotation.radiusPoi * common.scale;
-        const py = hy + Math.sin(rotation.anglePoi) * rotation.radiusPoi * common.scale;
-
-        if (segmentVisible.chain) {
-          ctx.strokeStyle = segmentColor.chain;
-          ctx.lineWidth = segmentSize.chain;
-          ctx.beginPath();
-          ctx.moveTo(rotation.originX, rotation.originY);
-          ctx.lineTo(hx, hy);
-          ctx.stroke();
-        }
-
-        if (segmentVisible.arm) {
-          ctx.strokeStyle = segmentColor.arm;
-          ctx.lineWidth = segmentSize.arm;
-          ctx.beginPath();
-          ctx.moveTo(hx, hy);
-          ctx.lineTo(px, py);
-          ctx.stroke();
-        }
-
-        if (isVisual && colData) {
-          drawVisualSideLive(
-            ctx,
-            rotation,
-            prevHand,
-            prevPoi,
-            colData,
-            visual,
-            common.scale,
-            view.scale,
-          );
-        }
-
-        const drawDot = (x: number, y: number, size: number, color: string) => {
-          ctx.fillStyle = color;
-          ctx.beginPath();
-          ctx.arc(x, y, size, 0, Math.PI * 2);
-          ctx.fill();
-        };
-        if (objectVisible.origin)
-          drawDot(rotation.originX, rotation.originY, objectSize.origin, objectColor.origin);
-        if (objectVisible.hand) drawDot(hx, hy, objectSize.hand, objectColor.hand);
-        if (objectVisible.poi && !isVisual) drawDot(px, py, objectSize.poi, objectColor.poi);
-      }
+      drawGrid(fc.grid);
+      for (const f of frame) drawSideFrame(f.side, f.prevHand, f.prevPoi, fc);
 
       animId = requestAnimationFrame(render);
     };
@@ -545,6 +688,7 @@ export default function Page() {
     visual,
     columnVersion,
     columnDataRef,
+    seqPlaying, // 再生開始/停止でのみ再起動（ステップ境界では再起動しない＝残像維持）
   ]);
 
   const shareParam = useMemo(
@@ -714,7 +858,7 @@ export default function Page() {
             role="tablist"
             aria-label="Panels"
           >
-            {(["General", "Left", "Right", "Visual Poi"] as const).map((t) => {
+            {(["General", "Left", "Right", "Visual Poi", "Sequence"] as const).map((t) => {
               const active = activeTab === t;
               return (
                 <button
@@ -862,6 +1006,26 @@ export default function Page() {
 
         {activeTab === "Visual Poi" && (
           <VisualPoiPanel visual={visual} setVisual={setVisual} onImageFile={applyImageFile} />
+        )}
+
+        {activeTab === "Sequence" && (
+          <SequencePanel
+            steps={seqSteps}
+            setSteps={setSeqSteps}
+            loop={seqLoop}
+            setLoop={setSeqLoop}
+            playing={seqPlaying}
+            currentStep={seqCurrentStep}
+            builtInNames={Object.keys(builtInPresets).sort((a, b) =>
+              displayName(a).localeCompare(displayName(b), undefined, { sensitivity: "base" }),
+            )}
+            userNames={Object.keys(userPresets).sort((a, b) =>
+              a.localeCompare(b, undefined, { sensitivity: "base" }),
+            )}
+            displayName={displayName}
+            onPlay={startSequence}
+            onStop={stopSequence}
+          />
         )}
 
         <div
