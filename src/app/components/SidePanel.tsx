@@ -1,4 +1,4 @@
-import { LocusSide } from "../util/defaultSide";
+import { LocusSide, PoiType } from "../util/defaultSide";
 import { Color } from "./Color";
 import { Num } from "./Num";
 import { Section } from "./Section";
@@ -93,6 +93,22 @@ export const SidePanel = ({ side, setSide, title }: Props) => (
     </Section>
 
     <Section title={`${title} / Poi`}>
+      <label className="flex w-full flex-col gap-2 text-sm sm:flex-row sm:items-center">
+        <span className="shrink-0 sm:w-36">ポイ種別</span>
+        <select
+          className="min-w-0 flex-1 rounded border px-2 py-1"
+          value={side.poiType ?? "normal"}
+          onChange={(e) => setSide({ ...side, poiType: e.target.value as PoiType })}
+        >
+          <option value="normal">ノーマル</option>
+          <option value="visual">ビジュアルポイ（LED）</option>
+        </select>
+      </label>
+      {(side.poiType ?? "normal") === "visual" && (
+        <p className="text-[11px] opacity-60">
+          ヘッドは LED バーとして描画されます。画像と LED の設定は「Visual Poi」タブで行います。
+        </p>
+      )}
       <Num
         label="Head Size"
         value={side.objectSize.poi}

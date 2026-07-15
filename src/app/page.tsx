@@ -1,16 +1,26 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Section } from "./components/Section";
 import { Toggle } from "./components/Toggle";
 import { clamp, Num } from "./components/Num";
 import { Color } from "./components/Color";
 import { SidePanel } from "./components/SidePanel";
+import { VisualPoiPanel } from "./components/VisualPoiPanel";
 import { defaultSide, LocusSide, RotationParams } from "./util/defaultSide";
 import { examplesMap } from "./util/examplesMap";
 import { useRouter } from "next/navigation";
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
+import {
+  defaultVisualPoi,
+  fileToDataUrl,
+  mergeVisual,
+  sanitizeVisualForShare,
+  VisualPoiParams,
+} from "./util/visualPoi";
+import { useColumnData } from "./util/useColumnData";
+import { drawVisualSideLive, renderExposure } from "./util/drawVisualPoi";
 
 export type CommonParams = {
   fps: number;
@@ -56,6 +66,7 @@ type SharePayload = {
   common: CommonParams;
   left: LocusSide;
   right: LocusSide;
+  visual?: VisualPoiParams;
 };
 
 const LS_KEY = "poitune-presets-v1";
@@ -95,13 +106,31 @@ export default function Page() {
   const [left, setLeft] = useState<LocusSide>(() => defaultSide(70, 70, 1, -3, 0, 0));
   const [right, setRight] = useState<LocusSide>(() => defaultSide(70, 70, 1, -3, Math.PI, Math.PI));
 
+  // ===== Visual poi (POV/LED) =====
+  const [visual, setVisual] = useState<VisualPoiParams>(defaultVisualPoi);
+  const { columnDataRef, columnVersion } = useColumnData(visual);
+
   const [toast, setToast] = useState<{ msg: string; show: boolean }>({ msg: "", show: false });
   const toastTimerRef = useRef<number | null>(null);
-  const pushToast = (msg: string, ms = 1800) => {
+  const pushToast = useCallback((msg: string, ms = 1800) => {
     setToast({ msg, show: true });
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast((t) => ({ ...t, show: false })), ms);
-  };
+  }, []);
+
+  const applyImageFile = useCallback(
+    async (file: File) => {
+      if (!file.type.startsWith("image/")) return;
+      try {
+        const dataUrl = await fileToDataUrl(file);
+        setVisual((v) => ({ ...v, imageSource: { kind: "upload", dataUrl } }));
+        pushToast("画像を読み込みました");
+      } catch {
+        pushToast("画像の読み込みに失敗しました");
+      }
+    },
+    [pushToast],
+  );
 
   const router = useRouter();
 
@@ -115,10 +144,13 @@ export default function Page() {
     setCommon((prev) => ({ ...prev, ...restored.common }));
     setLeft(restored.left);
     setRight(restored.right);
+    if (restored.visual) setVisual(mergeVisual(restored.visual));
   }, []);
 
   const [syncLR, setSyncLR] = useState(false);
-  const [activeTab, setActiveTab] = useState<"General" | "Left" | "Right" | "Examples">("General");
+  const [activeTab, setActiveTab] = useState<
+    "General" | "Left" | "Right" | "Visual Poi" | "Examples"
+  >("General");
 
   // ===== Presets (state) =====
   const [userPresets, setUserPresets] = useState<PresetMap>({});
@@ -138,8 +170,8 @@ export default function Page() {
   }, []);
 
   const currentPayload: SharePayload = useMemo(
-    () => ({ common, left, right }),
-    [common, left, right],
+    () => ({ common, left, right, visual }),
+    [common, left, right, visual],
   );
 
   const savePreset = (name: string, overwrite = false) => {
@@ -158,11 +190,23 @@ export default function Page() {
       return pushToast("Nothing to overwrite");
     }
 
-    const next = { ...userPresets, [trimmed]: currentPayload };
+    // 大きすぎるアップロード画像は localStorage 圧迫を避けてサンプルにフォールバック
+    const tooLarge =
+      visual.imageSource.kind === "upload" && visual.imageSource.dataUrl.length > 400_000;
+    const payload: SharePayload = tooLarge
+      ? { ...currentPayload, visual: sanitizeVisualForShare(visual) }
+      : currentPayload;
+
+    const next = { ...userPresets, [trimmed]: payload };
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(next));
+    } catch {
+      return pushToast("保存容量を超えたためプリセットを保存できませんでした");
+    }
     setUserPresets(next);
-    localStorage.setItem(LS_KEY, JSON.stringify(next));
     setSelectedPreset(trimmed);
-    pushToast(overwrite ? "Preset overwritten" : "Preset saved");
+    if (tooLarge) pushToast("画像が大きいためプリセットには保存されません");
+    else pushToast(overwrite ? "Preset overwritten" : "Preset saved");
   };
 
   const loadPreset = (name: string) => {
@@ -172,6 +216,7 @@ export default function Page() {
     setCommon((prev) => ({ ...prev, ...p.common }));
     setLeft(p.left);
     setRight(p.right);
+    setVisual(p.visual ? mergeVisual(p.visual) : defaultVisualPoi);
     pushToast(`Loaded "${displayName(name)}"`);
   };
 
@@ -277,6 +322,42 @@ export default function Page() {
     return () => canvas.removeEventListener("wheel", onWheel);
   }, []);
 
+  // Visual poi: 画像のドラッグ＆ドロップ / クリップボード貼り付け
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onDragOver = (e: DragEvent) => e.preventDefault();
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      const f = e.dataTransfer?.files?.[0];
+      if (f) applyImageFile(f);
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      // 入力欄への貼り付け（hex カラー等）は妨げない
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          const f = item.getAsFile();
+          if (f) applyImageFile(f);
+          break;
+        }
+      }
+    };
+
+    canvas.addEventListener("dragover", onDragOver);
+    canvas.addEventListener("drop", onDrop);
+    window.addEventListener("paste", onPaste);
+    return () => {
+      canvas.removeEventListener("dragover", onDragOver);
+      canvas.removeEventListener("drop", onDrop);
+      window.removeEventListener("paste", onPaste);
+    };
+  }, [applyImageFile]);
+
   // Sync L->R (add +180° to initial angles)
   const applySyncFromLeft = (nextLeft: LocusSide) => {
     setLeft(nextLeft);
@@ -334,6 +415,21 @@ export default function Page() {
     const l = structuredClone(left);
     const r = structuredClone(right);
 
+    const shownSides: LocusSide[] = common.numberOfLocus === 2 ? [l, r] : [l];
+    const anyVisual = shownSides.some((s) => (s.poiType ?? "normal") === "visual");
+
+    // 長時間露光: パターン1周期分を静的に一括描画（RAF なし）
+    if (visual.exposure && anyVisual && columnDataRef.current) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = common.backgroundColor;
+      ctx.fillRect(0, 0, w, h);
+      ctx.translate(view.tx, view.ty);
+      ctx.scale(view.scale, view.scale);
+      drawGrid();
+      renderExposure(ctx, shownSides, columnDataRef.current, visual, common.scale, view.scale);
+      return;
+    }
+
     const render = () => {
       const now = performance.now();
       const dt = ((now - prev) / 500) * common.speedRate; // arbitrary scale
@@ -368,8 +464,13 @@ export default function Page() {
           segmentColor,
         } = side;
 
+        const prevHand = rotation.angleHand;
+        const prevPoi = rotation.anglePoi;
         rotation.angleHand += rotation.omegaHand * dt;
         rotation.anglePoi += rotation.omegaPoi * dt;
+
+        const colData = columnDataRef.current;
+        const isVisual = (side.poiType ?? "normal") === "visual" && colData !== null;
 
         const hx =
           rotation.originX + Math.cos(rotation.angleHand) * rotation.radiusHand * common.scale;
@@ -396,6 +497,19 @@ export default function Page() {
           ctx.stroke();
         }
 
+        if (isVisual && colData) {
+          drawVisualSideLive(
+            ctx,
+            rotation,
+            prevHand,
+            prevPoi,
+            colData,
+            visual,
+            common.scale,
+            view.scale,
+          );
+        }
+
         const drawDot = (x: number, y: number, size: number, color: string) => {
           ctx.fillStyle = color;
           ctx.beginPath();
@@ -405,7 +519,7 @@ export default function Page() {
         if (objectVisible.origin)
           drawDot(rotation.originX, rotation.originY, objectSize.origin, objectColor.origin);
         if (objectVisible.hand) drawDot(hx, hy, objectSize.hand, objectColor.hand);
-        if (objectVisible.poi) drawDot(px, py, objectSize.poi, objectColor.poi);
+        if (objectVisible.poi && !isVisual) drawDot(px, py, objectSize.poi, objectColor.poi);
       }
 
       animId = requestAnimationFrame(render);
@@ -419,9 +533,24 @@ export default function Page() {
     prev = performance.now();
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [common, left, right, w, h, view.tx, view.ty, view.scale]);
+  }, [
+    common,
+    left,
+    right,
+    w,
+    h,
+    view.tx,
+    view.ty,
+    view.scale,
+    visual,
+    columnVersion,
+    columnDataRef,
+  ]);
 
-  const shareParam = useMemo(() => encodeState({ common, left, right }), [common, left, right]);
+  const shareParam = useMemo(
+    () => encodeState({ common, left, right, visual: sanitizeVisualForShare(visual) }),
+    [common, left, right, visual],
+  );
 
   const shareUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
@@ -585,7 +714,7 @@ export default function Page() {
             role="tablist"
             aria-label="Panels"
           >
-            {(["General", "Left", "Right"] as const).map((t) => {
+            {(["General", "Left", "Right", "Visual Poi"] as const).map((t) => {
               const active = activeTab === t;
               return (
                 <button
@@ -631,6 +760,7 @@ export default function Page() {
                 setLeft(l);
                 setRight(r);
                 setSyncLR(false);
+                setVisual(defaultVisualPoi);
                 setView({ tx: 0, ty: 0, scale: 1 });
               }}
             >
@@ -729,6 +859,10 @@ export default function Page() {
         )}
 
         {activeTab === "Right" && <SidePanel title="Right" side={right} setSide={setRight} />}
+
+        {activeTab === "Visual Poi" && (
+          <VisualPoiPanel visual={visual} setVisual={setVisual} onImageFile={applyImageFile} />
+        )}
 
         <div
           className={[

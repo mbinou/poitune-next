@@ -26,8 +26,12 @@ type ObjectSize = {
   poi: number;
 };
 
+// ポイの種類（未指定 = "normal"：旧プリセット/URL 互換）
+export type PoiType = "normal" | "visual";
+
 // 片側（Left / Right）
 export type LocusSide = {
+  poiType?: PoiType;
   objectVisible: ObjectVisibility;
   objectSize: ObjectSize;
   objectColor: { origin: string; hand: string; poi: string };
@@ -45,6 +49,7 @@ export const defaultSide = (
   angleHand: number,
   anglePoi: number,
 ): LocusSide => ({
+  poiType: "normal",
   objectVisible: { origin: true, hand: true, poi: true },
   objectSize: { origin: 2, hand: 4, poi: 10 },
   objectColor: { origin: "#888888", hand: "#00ffcc", poi: "#ffcc00" },
