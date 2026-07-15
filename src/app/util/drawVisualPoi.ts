@@ -9,6 +9,7 @@ type LedMetrics = {
   spacing: number;
   sizeCore: number;
   sizeGlow: number;
+  barOverlapScale: number; // バー方向の点の重なりに応じた輝度補正（重なるほど1描画を暗く）
 };
 
 const ledMetrics = (
@@ -24,9 +25,13 @@ const ledMetrics = (
   const spacing = leds > 1 ? span / (leds - 1) : 0;
   if (leds === 1) r0 += span; // LED 1灯なら先端に配置
   const sizeCore = clamp(spacing * 0.55, 1.1 / viewScale, 4);
-  return { r0, spacing, sizeCore, sizeGlow: sizeCore * 3.1 };
+  const barOverlapScale = leds > 1 ? 1 / Math.max(1, (2 * sizeCore) / spacing) : 1;
+  return { r0, spacing, sizeCore, sizeGlow: sizeCore * 3.1, barOverlapScale };
 };
 
+// 加算合成（lighter）では重ね塗りが色を白へ飽和させるため、
+// バー方向の点の重なりと、回転方向のサブステップ重なり（内側 LED ほど移動が小さい）
+// の両方でアルファを正規化する。stepAngle は1描画あたりの回転角。
 const drawLedColumn = (
   ctx: CanvasRenderingContext2D,
   hx: number,
@@ -36,6 +41,7 @@ const drawLedColumn = (
   m: LedMetrics,
   colIdx: number,
   col: ColumnData,
+  stepAngle: number,
 ) => {
   const base = colIdx * col.leds * 4;
   for (let i = 0; i < col.leds; i++) {
@@ -45,14 +51,16 @@ const drawLedColumn = (
     const b = col.data[o + 2];
     if (r + g + b < 24) continue; // 消灯扱い（ほぼ黒）
     const d = m.r0 + m.spacing * i;
+    const motion = d * stepAngle; // この LED が1描画で進む距離
+    const alphaScale = m.barOverlapScale * clamp(motion / (2 * m.sizeCore), 0.08, 1);
     const x = hx + ux * d;
     const y = hy + uy * d;
     ctx.fillStyle = `rgb(${r},${g},${b})`;
-    ctx.globalAlpha = 0.16;
+    ctx.globalAlpha = 0.16 * alphaScale;
     ctx.beginPath();
     ctx.arc(x, y, m.sizeGlow, 0, TWO_PI);
     ctx.fill();
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = 0.9 * alphaScale;
     ctx.beginPath();
     ctx.arc(x, y, m.sizeCore, 0, TWO_PI);
     ctx.fill();
@@ -77,7 +85,9 @@ export const drawVisualSideLive = (
   const dH = rot.angleHand - prevHand;
   const dP = rot.anglePoi - prevPoi;
   const colAngle = TWO_PI / (col.cols * vp.repeats);
-  const steps = clamp(Math.ceil(Math.max(Math.abs(dP), Math.abs(dH)) / colAngle), 1, 48);
+  const sweep = Math.max(Math.abs(dP), Math.abs(dH));
+  const steps = clamp(Math.ceil(sweep / colAngle), 1, 48);
+  const stepAngle = sweep / steps;
 
   for (let s = 1; s <= steps; s++) {
     const t = s / steps;
@@ -94,6 +104,7 @@ export const drawVisualSideLive = (
       m,
       columnIndex(ap, col.cols, vp.repeats),
       col,
+      stepAngle,
     );
   }
   ctx.restore();
@@ -155,6 +166,7 @@ export const renderExposure = (
     const colAngle = TWO_PI / (col.cols * vp.repeats);
     const sweep = Math.max(Math.abs(rot.omegaPoi), Math.abs(rot.omegaHand)) * T;
     const steps = T === 0 ? 1 : Math.min(Math.ceil(sweep / colAngle), 40000);
+    const stepAngle = sweep > 0 ? sweep / steps : colAngle;
 
     for (let s = 0; s < steps; s++) {
       const tau = (T * s) / steps;
@@ -171,6 +183,7 @@ export const renderExposure = (
         m,
         columnIndex(ap, col.cols, vp.repeats),
         col,
+        stepAngle,
       );
     }
     ctx.restore();
