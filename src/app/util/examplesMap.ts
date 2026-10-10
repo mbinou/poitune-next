@@ -5,9 +5,23 @@ export const examplesMap: Record<
   string,
   { left: LocusSide; right: LocusSide; common?: Partial<CommonParams> }
 > = {
+  "Big Circle": {
+    left: defaultSide(70, 70, 1, 1, 0, 0),
+    right: defaultSide(70, 70, 1, 1, Math.PI, Math.PI),
+  },
+  "Reverce Big Circle": {
+    left: defaultSide(70, 70, -1, -1, 0, 0),
+    right: defaultSide(70, 70, -1, -1, Math.PI, Math.PI),
+  },
   Clover: {
     left: defaultSide(70, 70, 1, -3, 0, 0),
     right: defaultSide(70, 70, 1, -3, Math.PI, Math.PI),
+  },
+  // Clover のポイ逆回転版。Clover と交互にシーケンス再生すると
+  // 遷移の中間でポイの角速度が 0 を通過し、ストール（静止→反転）になる
+  "Reverse Clover": {
+    left: defaultSide(70, 70, -1, 3, 0, 0),
+    right: defaultSide(70, 70, -1, 3, Math.PI, Math.PI),
   },
   "Negative Clover": {
     left: defaultSide(70, 70, 3, -1, 0, 0),
